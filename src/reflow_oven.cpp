@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 #include "TempSensor.h"
 #include "Display.h"
 #include "SSR.h"
@@ -20,21 +22,6 @@ void press_isr() {
   ec11.update_sw();
 }
 
-void setup() {
-  Serial.begin(9600);
-  temp_sensor.setup();
-  display.setup();
-
-  // ec11 setup isr
-  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_A()), rotate_isr, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_B()), rotate_isr, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_SW()), press_isr, CHANGE);
-
-  // start in idle
-  enter_idle_state();
-}
-
-
 // Loop state machine
 #define IDLE            0 
 #define PROFILES_LIST   1       // list all available profiles, with +new profile option up to MAX_PROFILE_CHOICES
@@ -56,6 +43,64 @@ const char profile_keys[MAX_PROFILE_CHOICES * 2][3] = { // 'n' is the profile na
   "n4", "p4",
   "n5", "p5",
 };
+
+// functions to change states, along with any necessary setup before entering the states
+void enter_idle_state() {
+  pref.end();     // if exiting from profiles list state, we want to close preferences.
+  ec11.set_rotary_options(IDLE_OPTIONS);
+  ec11.set_encoder_value(0);
+  oven_state = IDLE;
+}
+
+void enter_profiles_state() {
+  // when we enter this state, we start with reads. any subsequent write operation must pref.end(), 
+  // then restart with write permissions, finish writing, then restart with read permissions. 
+  // the final pref.end() will be called when we go back to the idle mode
+  pref.begin(PREF_NAMESPACE, true); 
+  // get number of profiles
+  int num_profiles = 0;
+  for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
+    if (!pref.isKey(profile_keys[i * 2])) break;
+    ++num_profiles;
+  }
+  //                      // profiles    //back option    //new profile option
+  ec11.set_rotary_options(num_profiles + 1 + (num_profiles == 5 ? 0 : 1));
+  ec11.set_encoder_value(0);
+  oven_state = PROFILES_LIST;
+}
+
+void enter_reflow_state(int profile_choice) {
+  ssr.reset();
+
+  // start reflow process with OvenController
+
+  oven_state = REFLOWING;
+}
+
+void enter_manual_state() {
+  // set encoder to be limitless on value
+  ec11.set_rotary_options(-1);
+  ec11.set_encoder_value(20); // TODO: set to current temp?
+  oven_state = MANUAL;
+}
+
+void enter_debug_state() {
+  ec11.set_rotary_options(-1);
+  oven_state = DEBUG;
+}
+
+void setup() {
+  temp_sensor.setup();
+  display.setup();
+
+  // ec11 setup isr
+  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_A()), rotate_isr, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_B()), rotate_isr, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_SW()), press_isr, CHANGE);
+
+  // start in idle
+  enter_idle_state();
+}
 
 void idle_loop() {
   // poll the EC11 object for the currently selected object
@@ -187,51 +232,5 @@ void loop() {
       debug_loop();
       break;
   }
-}
-
-// functions to change states, along with any necessary setup before entering the states
-void enter_idle_state() {
-  pref.end();     // if exiting from profiles list state, we want to close preferences.
-  ec11.set_rotary_options(IDLE_OPTIONS);
-  ec11.set_encoder_value(0);
-  oven_state = IDLE;
-}
-
-void enter_profiles_state() {
-  // when we enter this state, we start with reads. any subsequent write operation must pref.end(), 
-  // then restart with write permissions, finish writing, then restart with read permissions. 
-  // the final pref.end() will be called when we go back to the idle mode
-  pref.begin(PREF_NAMESPACE, true); 
-  // get number of profiles
-  int num_profiles = 0;
-  for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
-    if (!pref.isKey(profile_keys[i * 2])) break;
-    ++num_profiles;
-  }
-  //                      // profiles    //back option    //new profile option
-  ec11.set_rotary_options(num_profiles + 1 + (num_profiles == 5 ? 0 : 1));
-  ec11.set_encoder_value(0);
-  oven_state = PROFILES_LIST;
-}
-
-void enter_reflow_state(int profile_choice) {
-  Serial.print("chose profile ");
-  Serial.println(profile_choice);
-  ssr.reset();
-
-  // start reflow process with OvenController
-
-  oven_state = REFLOWING;
-}
-
-void enter_manual_state() {
-  // set encoder to be limitless on value
-  ec11.set_rotary_options(-1);
-  ec11.set_encoder_value(20); // TODO: set to current temp?
-  oven_state = MANUAL;
-}
-
-void enter_debug_state() {
-  ec11.set_rotary_options(-1);
-  oven_state = DEBUG;
+  delay(50);
 }
