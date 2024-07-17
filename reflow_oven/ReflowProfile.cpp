@@ -4,7 +4,7 @@ ReflowProfile::ReflowProfile() {
 
 }
 
-void ReflowProfile::start() {
+void ReflowProfile::start_profile() {
   this->start_millis = millis();
 }
 

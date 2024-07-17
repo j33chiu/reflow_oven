@@ -22,9 +22,9 @@ public:
   void clear();
 
   // text printing
-  void print(char* format, ...);
+  void print(const char* format, ...);
   void newline();
-  void println(char* format, ...);
+  void println(const char* format, ...);
   void clear_text();
   void drawText();
 

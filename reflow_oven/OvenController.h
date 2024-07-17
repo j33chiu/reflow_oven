@@ -11,13 +11,16 @@ class OvenController {
 
 public:
   OvenController(SSR* ssr, TempSensor* temp_sensor, Display* display);
-  void follow_profile(ReflowProfile* profile);
+  void start_profile(ReflowProfile* profile);
+  void update();
+  void end();
 
 
 private:
   SSR* ssr = nullptr;
   TempSensor* temp_sensor = nullptr;
   Display* display = nullptr;
+  ReflowProfile* profile = nullptr;
 
 };
 
