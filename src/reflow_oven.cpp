@@ -4,9 +4,10 @@
 #include "Display.h"
 #include "SSR.h"
 #include "EC11.h"
+#include "ProfileEditor.h"
 
 #include <Preferences.h>
-#define PREF_NAMESPACE "pref_rf_oven"
+#include <nvs_flash.h>
 Preferences pref;
 
 TempSensor temp_sensor;
@@ -33,16 +34,6 @@ void press_isr() {
 uint8_t oven_state = IDLE;
 
 #define IDLE_OPTIONS        3   // profile list, manual mode, debug mode
-#define MAX_PROFILE_CHOICES 5   // max profiles that can be saved
-
-// access profile info from preferences
-const char profile_keys[MAX_PROFILE_CHOICES * 2][3] = { // 'n' is the profile name, 'p' is the actual profile data
-  "n1", "p1",
-  "n2", "p2",
-  "n3", "p3",
-  "n4", "p4",
-  "n5", "p5",
-};
 
 // functions to change states, along with any necessary setup before entering the states
 void enter_idle_state() {
@@ -100,17 +91,21 @@ void setup() {
 
   // start in idle
   enter_idle_state();
+
+  // flash storage
+  nvs_flash_init();
 }
 
 void idle_loop() {
   // poll the EC11 object for the currently selected object
   int choice = ec11.get_encoder_value();
   // loop to display reflow profile choices
+  display.clear_display_buffer();
   display.clear_text();
   display.println("%s Profiles", choice == 0 ? "[*]" : "[ ]");
   display.println("%s Manual Mode", choice == 1 ? "[*]" : "[ ]");
   display.println("%s Debug Mode", choice == 2 ? "[*]" : "[ ]");
-  display.drawText();
+  display.display_text();
 
   // select and change states depending on selection
   if (ec11.poll_sw_event() == SW_PRESSED) {
@@ -127,6 +122,7 @@ void profiles_list_loop() {
   // poll the EC11 object for the currently selected object
   int choice = ec11.get_encoder_value();
 
+  display.clear_display_buffer();
   display.clear_text();
   // print profiles
   int num_profiles = 0;
@@ -145,14 +141,31 @@ void profiles_list_loop() {
   }
   // print back option
   display.println("%s Back", choice == min(num_profiles + 1, MAX_PROFILE_CHOICES) ? "[*]" : "[ ]");
-  display.drawText();
+  display.display_text();
 
   // select and change states depending on selection
   if (ec11.poll_sw_event() == SW_PRESSED) {
     if (choice < num_profiles) {
       // chose an existing profile
+      ProfileEditor editor(&pref, &display, &ec11);
+      switch(editor.edit_profile(choice)) {
+        case PROFILE_START: break;  // TODO: start the oven with profile
+        case PROFILE_CHANGED: 
+          pref.end(); // pref was set to read/write, end so we can restart it with just read
+          enter_profiles_state();
+          break;
+        case PROFILE_NOTHING: 
+        default: enter_profiles_state(); break;
+      }
     } else if (choice == num_profiles) {
       // chose to add a new profile
+      ProfileEditor editor(&pref, &display, &ec11);
+      if (editor.new_profile()) {
+        // pref was set to read/write, end so we can restart it with just read
+        pref.end();
+      }
+      // done with profile editor
+      enter_profiles_state();
     } else {
       // back
       enter_idle_state();
@@ -180,10 +193,12 @@ void reflow_loop() {
 
 void manual_loop() {
   float target_temp = ec11.get_encoder_value();
+
+  display.clear_display_buffer();
   display.clear_text();
   display.println("Target Temp: %06.2f C", target_temp);
   display.println("\nClick knob to exit");
-  display.drawText();
+  display.display_text();
 
   // if clicked, return to idle state
   if (ec11.poll_sw_event() == SW_PRESSED) {
@@ -196,6 +211,7 @@ void debug_loop() {
   temp_sensor.update();
   float sensor_temp = -1;
 
+  display.clear_display_buffer();
   display.clear_text();
   if (temp_sensor.getNumDevices() == 0) {
     display.println("No Temperature Sensors Found...");
@@ -205,7 +221,7 @@ void debug_loop() {
     display.println("Temperature: %06.2f", sensor_temp);
   }
   display.println("\nClick knob to exit");
-  display.drawText();
+  display.display_text();
 
   // if clicked, return to idle state
   if (ec11.poll_sw_event() == SW_PRESSED) {
