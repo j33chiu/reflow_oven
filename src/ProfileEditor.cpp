@@ -1,31 +1,32 @@
 #include "ProfileEditor.h"
 
-ProfileEditor::ProfileEditor(Preferences* pref, Display* display, EC11* ec11) {
+ProfileEditor::ProfileEditor(Preferences* pref) {
     this->pref = pref;
-    this->display = display;
-    this->ec11 = ec11;
-    memset(profile_name, ' ', MAX_PROFILE_NAME_CHARS);      // reset data in name
+    memset(profile_name, ' ', MAX_PROFILE_NAME_CHARS);          // reset data in name
     profile_name[MAX_PROFILE_NAME_CHARS] = '\0';
-    memset(profile_state, 0, time_state_options*sizeof(int));           // reset profile_state to zeros
+    memset(profile_state, 0, time_state_options*sizeof(int));   // reset profile_state to zeros
 }
 
 bool ProfileEditor::new_profile() {
+    // count currently existing profiles
     int num_existing = 0;
     for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
-        if (!pref->isKey(profile_keys[i * 2])) break;
-        // key is valid, profile exists
-        ++num_existing;
+        if (!pref->isKey(profile_keys[i * 2])) break;   // key is not valid
+        ++num_existing; // key is valid, profile exists
     }
+    // if there are the max number of profiles, exit
     if (num_existing == MAX_PROFILE_CHOICES) {
         return false;
     }
+    // current profile index (0-indexed) is set to the number of currently existing profiles
     profile_idx = num_existing;
+
+    // profile creation
     if (!this->name_screen()) {
+        // user pressed 'back', exit profile creation without creating a profile
         return false;
     } else {
         // properly made profile, save data
-        // Serial.println(profile_name);
-        // Serial.println(profile_data);
         pref->end();
         pref->begin(PREF_NAMESPACE, false);
         pref->putString(profile_keys[profile_idx * 2], profile_name);   // save the profile name
@@ -35,35 +36,38 @@ bool ProfileEditor::new_profile() {
 }
 
 uint8_t ProfileEditor::edit_profile(int profile_idx) {
+    // current profile index (0-indexed) is set
     this->profile_idx = profile_idx;
-    // get data from preferences
+    // get data of the profile from preferences
     pref->getString(profile_keys[profile_idx * 2], profile_name, MAX_PROFILE_NAME_CHARS + 1);
     pref->getString(profile_keys[(profile_idx * 2) + 1], profile_data, MAX_PROFILE_DATA_CHARS + 1);
     
-    // setup ec11 choices: Start, Edit, Delete, Back
-    ec11->set_rotary_options(NUM_PROFILE_OPTIONS);
-    ec11->set_encoder_value(0);
+    // setup ec11 choices: Start, Edit, Delete, Back (4 choices)
+    EC11::set_rotary_options(NUM_PROFILE_OPTIONS);
+    EC11::set_encoder_value(0);
 
+    uint8_t output_state = PROFILE_NOTHING;
     bool chose_option = false;
     while (!chose_option) {
-        int choice = ec11->get_encoder_value();
+        int choice = EC11::get_encoder_value();
 
-        display->clear_display_buffer();
-        display->clear_text();
-        display->println(profile_name);
-        display->println("%s Start", choice == 0 ? "[*]" : "[ ]");
-        display->println("%s Edit", choice == 1 ? "[*]" : "[ ]");
-        display->println("%s Delete", choice == 2 ? "[*]" : "[ ]");
-        display->println("%s Back", choice == 3 ? "[*]" : "[ ]");
-        display->display_text();
+        // print all options for the profile (start, edit, delete, back)
+        Display::clear_buffers();
+        Display::buff_text_println(profile_name);
+        Display::buff_text_println("%s Start", choice == 0 ? "[*]" : "[ ]");
+        Display::buff_text_println("%s Edit", choice == 1 ? "[*]" : "[ ]");
+        Display::buff_text_println("%s Delete", choice == 2 ? "[*]" : "[ ]");
+        Display::buff_text_println("%s Back", choice == 3 ? "[*]" : "[ ]");
+        Display::draw_text();
 
         // select and change states depending on selection
-        if (ec11->poll_sw_event() == SW_PRESSED) {
+        if (EC11::poll_sw_event() == SW_PRESSED) {
+            chose_option = true;
             if (choice == 0) {
-                return PROFILE_START;
+                // chose "start", exit and return state
+                output_state = PROFILE_START;
             } else if (choice == 1) {
-                // TODO: might need to set profile_data to zeros here
-                
+                // chose "edit"        
                 // setup profile_state, then switch to name and profile edit screens
                 for (int profile_ptr = 0; profile_ptr < MAX_PROFILE_DATA_CHARS; profile_ptr += 4) {
                     int time = atoi(profile_data + profile_ptr);
@@ -71,21 +75,23 @@ uint8_t ProfileEditor::edit_profile(int profile_idx) {
                     int temp = atoi(profile_data + profile_ptr);
                     profile_state[time / TIME_INTERVALS] = temp / TEMP_INTERVALS;
                 }
+                // enter the naming and profile screens after setting the current profile data already.
                 if (this->name_screen()) {
                     // properly edited profile, save data
                     pref->end();
                     pref->begin(PREF_NAMESPACE, false);
                     pref->putString(profile_keys[profile_idx * 2], profile_name);   // save the profile name
                     pref->putString(profile_keys[(profile_idx * 2) + 1], profile_data);   // save the profile data
-                    return PROFILE_CHANGED;
+                    output_state = PROFILE_CHANGED;
                 } else {
-                    return PROFILE_NOTHING;
+                    // if here, user clicked "back", exiting the editing screens and we go back to the screen displaying all the options for the profile
+                    chose_option = false;
                 }
             } else if (choice == 2) {
-                // TODO: delete profile
+                // chose "delete"
                 pref->end();
                 pref->begin(PREF_NAMESPACE, false);
-                // shift profiles
+                // shift profiles (logic: deleting profile in slot 2 should shift all subsequent slots. can do this by shifting everything, then deleting whats at the end)
                 int i = profile_idx;
                 for (i = profile_idx + 1; i < MAX_PROFILE_CHOICES; i++) {
                     if (pref->isKey(profile_keys[i * 2])) {
@@ -99,61 +105,63 @@ uint8_t ProfileEditor::edit_profile(int profile_idx) {
                 --i;
                 pref->remove(profile_keys[i * 2]);
                 pref->remove(profile_keys[(i * 2) + 1]);
-                return PROFILE_CHANGED;
+                output_state = PROFILE_CHANGED;
             } else {
-                return PROFILE_NOTHING;
+                // chose "back", return nothing
+                output_state = PROFILE_NOTHING;
             }
         }
     }
-    return PROFILE_NOTHING;
+    return output_state;
 }
 
 bool ProfileEditor::name_screen() {
-    // setup ec11 choices
-    ec11->set_rotary_options(MAX_PROFILE_NAME_CHARS + 2); // allow rotating between all chars and the "done" and "back" choices
-    ec11->set_encoder_value(0);
+    // setup ec11 choices (number of characters that can be edited + 2)
+    EC11::set_rotary_options(MAX_PROFILE_NAME_CHARS + 2); // allow rotating between all chars and the "done" and "back" choices
+    EC11::set_encoder_value(0);
 
+    // Cursor state goes between the character positions and the "done"/"back" options, ALPHA_NUM_STATE is after selecting a char position and goes between letters/numbers
     int state = CURSOR_STATE;
 
     bool done_name = false;
-    int cursor_position = ec11->get_encoder_value();
+    int cursor_position = EC11::get_encoder_value();
     int char_choice = 0;
 
     // while loop to update ui
     while (!done_name) {
         // current option of knob
         if (state == CURSOR_STATE) {
-            cursor_position = ec11->get_encoder_value();
+            cursor_position = EC11::get_encoder_value();
         } else if (state == ALPHA_NUM_STATE) {
-            char_choice = ec11->get_encoder_value();
+            char_choice = EC11::get_encoder_value();
             profile_name[cursor_position] = alpha_num[char_choice];
         }
 
-        // display text
-        display->clear_display_buffer();
-        display->clear_text();
-        display->println("Name:");
-        display->println(profile_name);
+        // display name and options
+        Display::clear_buffers();
+        Display::buff_text_println("Name:");
+        Display::buff_text_println(profile_name);
         for (int i = 0; i < MAX_PROFILE_NAME_CHARS; i++) {
             if (i == cursor_position) {
-                display->print("^");
+                Display::buff_text_print("^");
             } else {
-                display->print(" ");
+                Display::buff_text_print(" ");
             }
         }
-        display->newline();
-        display->println("%s Done", cursor_position == MAX_PROFILE_NAME_CHARS ? "[*]" : "[ ]");
-        display->println("%s Back", cursor_position == (MAX_PROFILE_NAME_CHARS + 1) ? "[*]" : "[ ]");
-        display->display_text();
+        Display::buff_text_endl();
+        Display::buff_text_println("%s Done", cursor_position == MAX_PROFILE_NAME_CHARS ? "[*]" : "[ ]");
+        Display::buff_text_println("%s Back", cursor_position == (MAX_PROFILE_NAME_CHARS + 1) ? "[*]" : "[ ]");
+        Display::draw_text();
 
         // select and change states depending on selection
-        if (ec11->poll_sw_event() == SW_PRESSED) {
+        if (EC11::poll_sw_event() == SW_PRESSED) {
             if (cursor_position < MAX_PROFILE_NAME_CHARS) {
+                // selected a character position
                 if (state == CURSOR_STATE) {
                     // transition to edit the char state
                     state = ALPHA_NUM_STATE;
-                    // edit the character at the knob_val index
-                    ec11->set_rotary_options(NUM_VALID_CHARS);
+                    // set the encoder value to the character already there
+                    EC11::set_rotary_options(NUM_VALID_CHARS);
                     char current_char = profile_name[cursor_position];
                     int start_encoder_value = 0;
                     for (int i = 0; i < NUM_VALID_CHARS; i++) {
@@ -162,22 +170,23 @@ bool ProfileEditor::name_screen() {
                             break;
                         }
                     }
-                    ec11->set_encoder_value(start_encoder_value);
+                    EC11::set_encoder_value(start_encoder_value);
                 } else if (state == ALPHA_NUM_STATE) {
                     // transition to cursor state
                     state = CURSOR_STATE;
                     // done setting the current character, revert ec11 back to cursor mode
-                    ec11->set_rotary_options(MAX_PROFILE_NAME_CHARS + 2);
-                    ec11->set_encoder_value(cursor_position);
+                    EC11::set_rotary_options(MAX_PROFILE_NAME_CHARS + 2);
+                    // set cursor value to the current cursor position
+                    EC11::set_encoder_value(cursor_position);
                 }
             } else if (cursor_position == MAX_PROFILE_NAME_CHARS) {
-                // "done" selection
+                // chose "done"
                 // move onto profile screen
                 if (!profile_screen()) {
                     // chose to come back to this screen
                     // revert ec11 back to cursor mode
-                    ec11->set_rotary_options(MAX_PROFILE_NAME_CHARS + 2);
-                    ec11->set_encoder_value(cursor_position);
+                    EC11::set_rotary_options(MAX_PROFILE_NAME_CHARS + 2);
+                    EC11::set_encoder_value(cursor_position);
                 } else {
                     // done with profile, can exit
                     done_name = true;
@@ -197,14 +206,16 @@ bool ProfileEditor::profile_screen() {
 
 
     // setup ec11 choices
-    ec11->set_rotary_options(time_state_options);
-    ec11->set_encoder_value(0);
-    display->set_graph_limits(0, MAX_TIME - TIME_INTERVALS, 0, MAX_TEMP - TEMP_INTERVALS);
+    EC11::set_rotary_options(time_state_options);
+    EC11::set_encoder_value(0);
+
+    // setup display graph limits
+    Display::set_graph_lim(0, MAX_TIME - TIME_INTERVALS, 0, MAX_TEMP - TEMP_INTERVALS);
 
     int state = TIME_STATE;
 
     bool done_profile = false;
-    int time_position = ec11->get_encoder_value();
+    int time_position = EC11::get_encoder_value();
     int time_value = time_position * TIME_INTERVALS;
     int temp_position = 0;
     int temp_value = temp_position * TEMP_INTERVALS;
@@ -212,68 +223,75 @@ bool ProfileEditor::profile_screen() {
     // while loop to update ui
     while (!done_profile) {
         // clear display
-        display->clear_display_buffer();
-        display->clear_text();
-        display->set_axes_labels(time_value, temp_value);   // write values to axes
+        Display::clear_buffers();
 
+        // draw graph
+        // depending on the state, we dynamically draw a tick (indicating time setting) or x (indicating temp setting) to correspond to user selections.
         if (state == TIME_STATE) {
-            // current knob value
-            time_position = ec11->get_encoder_value();
+            // in time state, where user chooses a time at which to add a temperature node/target
+            // update time knob position and value
+            time_position = EC11::get_encoder_value();
             time_value = min(time_position * TIME_INTERVALS, MAX_TIME - TIME_INTERVALS);
-            temp_value = profile_state[time_position] * TEMP_INTERVALS; // as the time cursor moves, update the temperature accordingly
+            // as the time cursor moves across the graph, update the temperature accordingly
+            temp_value = profile_state[time_position] * TEMP_INTERVALS;
             // draw a vertical bar indicating cursor position
-            if (time_position < time_value_options) display->draw_graph_tick(time_value, true);
+            if (time_position < time_value_options) Display::buff_graph_tick(time_value, true); // only draw if not selecting the "back" or "done" options
         } else if (state == TEMP_STATE) {
-            // current knob value
-            temp_position = ec11->get_encoder_value();
+            // in temp state, where user has chosen a time and is currently adjusting the target temperature
+            // update temperature knob position and value
+            temp_position = EC11::get_encoder_value();
             temp_value = temp_position * TEMP_INTERVALS;
             // draw an 'x' corresponding to the current temperature being set
-            display->draw_graph_point(time_value, temp_value);
+            Display::buff_graph_point(time_value, temp_value);
         }
-        // display time and temp unless in the "done" or "back" options
+        // display time and temp on the graph axes unless in the "done" or "back" options
         if (time_position < time_value_options) {
-            display->set_axes_labels(time_value, temp_value);
+            Display::set_graph_axes(time_value, temp_value);
         } else {
-            display->set_axes_labels("   ", "   ");
+            Display::set_graph_axes("   ", "   ");
         }
-        // for every non-zero point in the profile, draw a point
+        // draw the profile on the graph
+        // for every non-zero point in the profile, draw a point and count how many nodes exist
         int profile_nodes = 0;
         for (int i = 0; i < time_value_options; i++) {
             if (profile_state[i] != 0) {
                 ++profile_nodes;
-                display->draw_graph_point(i * TIME_INTERVALS, profile_state[i] * ((int)TEMP_INTERVALS));
+                Display::buff_graph_point(i * TIME_INTERVALS, profile_state[i] * ((int)TEMP_INTERVALS));
             }
         }
         // display 'done' and 'back' options
-        display->print("%s Done   ", time_position == time_value_options ? "[*]" : "[ ]");
-        display->println("%s Back", time_position == (time_value_options + 1) ? "[*]" : "[ ]");
-
-        display->display_text(0, SCREEN_HEIGHT - (CHAR_PX_HEIGHT + 2) + 2, false); // Display at the bottom of the screen
-        display->display_graph();
+        Display::buff_text_print("%s Done   ", time_position == time_value_options ? "[*]" : "[ ]");
+        Display::buff_text_println("%s Back", time_position == (time_value_options + 1) ? "[*]" : "[ ]");
+        // display the text (done and back options)
+        Display::draw_text(0, SCREEN_HEIGHT - (CHAR_PX_HEIGHT + 2) + 2, false); // don't draw to the screen yet since this causes flickering
+        // display the graph
+        Display::draw_graph();
 
         // select and change states depending on selection
-        if (ec11->poll_sw_event() == SW_PRESSED) {
+        if (EC11::poll_sw_event() == SW_PRESSED) {
             if (time_position < time_value_options) {
+                // selected a time on the graph
                 if (state == TIME_STATE) {
+                    // start editing temperature if not too many nodes. If already at the limit, only allow editing of temperature if it is an existing node (non-0)
                     if (temp_value != 0 || profile_nodes < MAX_PROFILE_DATA_POINTS) {
                         // transition to temperature edit state
-                        ec11->set_rotary_options(temp_value_options);
-                        ec11->set_encoder_value(temp_value / TEMP_INTERVALS);
+                        EC11::set_rotary_options(temp_value_options);
+                        EC11::set_encoder_value(temp_value / TEMP_INTERVALS);
                         state = TEMP_STATE;
                     }
                 } else if (state == TEMP_STATE) {
-                    // set the profile state
+                    // set the node value and go back to the time state
                     profile_state[time_position] = temp_position;
                     // transition back to time edit state
-                    ec11->set_rotary_options(time_state_options);
-                    ec11->set_encoder_value(time_value / TIME_INTERVALS);
+                    EC11::set_rotary_options(time_state_options);
+                    EC11::set_encoder_value(time_value / TIME_INTERVALS);
                     state = TIME_STATE;
                 }
             } else if (time_position == time_value_options) {
-                // done selection
-                // TODO: loop through profile_state and any non-zero values are made into nodes for the profile
+                // chose "done"
                 if (profile_idx < 0) return false; // error
 
+                // loop through profile state array. any non-0 values are added to the profile_data string
                 int profile_data_ptr_pos = 0;
                 for (int i = 0; i < time_value_options; i++) {
                     if (profile_state[i] != 0) {
@@ -284,7 +302,7 @@ bool ProfileEditor::profile_screen() {
                 }
                 done_profile = true;
             } else {
-                // back selection
+                // chose "back"
                 return false;
             }
         }

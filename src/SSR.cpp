@@ -1,6 +1,11 @@
 #include "SSR.h"
 #include <Arduino.h>
 
+SSR& SSR::get_instance(int pin) {
+  static SSR instance(pin);
+  return instance;
+}
+
 SSR::SSR(int pin) {
   this->pin = pin;
   pinMode(pin, OUTPUT);

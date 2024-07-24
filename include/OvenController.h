@@ -1,6 +1,11 @@
 #ifndef OVEN_CONTROLLER_H
 #define OVEN_CONTROLLER_H
 
+#include "SSR.h"
+#include "TempSensor.h"
+#include "Display.h"
+#include "ReflowProfile.h"
+
 // states
 #define ZONE_PREHEAT  0       // preheating zone (90s to get to a target temp, linearly) (max 2min)
 #define ZONE_SOAK     1       // soaking zone (90s to get to another target temp, linearly) (max 2min)
@@ -10,17 +15,14 @@
 class OvenController {
 
 public:
-  OvenController(SSR* ssr, TempSensor* temp_sensor, Display* display);
-  void start_profile(ReflowProfile* profile);
+  OvenController();
+  void start_profile(const char* profile_name_pref_key, const char* profile_data_pref_key);
   void update();
   void end();
 
 
 private:
-  SSR* ssr = nullptr;
-  TempSensor* temp_sensor = nullptr;
-  Display* display = nullptr;
-  ReflowProfile* profile = nullptr;
+  ReflowProfile profile;
 
 };
 

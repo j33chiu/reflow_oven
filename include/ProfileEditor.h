@@ -48,7 +48,7 @@ const char alpha_num[NUM_VALID_CHARS + 1] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 class ProfileEditor {
 
 public:
-    ProfileEditor(Preferences* pref, Display* display, EC11* ec11);
+    ProfileEditor(Preferences* pref);
     
     bool new_profile();
     uint8_t edit_profile(int profile_num);
@@ -56,8 +56,6 @@ public:
 
 private:
     Preferences* pref = nullptr;
-    Display* display = nullptr;
-    EC11* ec11 = nullptr;
 
     int profile_idx = -1;
 

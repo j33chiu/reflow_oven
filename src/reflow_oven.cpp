@@ -5,23 +5,14 @@
 #include "SSR.h"
 #include "EC11.h"
 #include "ProfileEditor.h"
+#include "OvenController.h"
 
 #include <Preferences.h>
 #include <nvs_flash.h>
 Preferences pref;
 
-TempSensor temp_sensor;
-Display display;
-SSR ssr;
-EC11 ec11 = EC11(D0, D1, D2);
-
-void rotate_isr() {
-  ec11.update_rotate();
-}
-
-void press_isr() {
-  ec11.update_sw();
-}
+// control ui and screens
+OvenController oven_controller();
 
 // Loop state machine
 #define IDLE            0 
@@ -38,8 +29,16 @@ uint8_t oven_state = IDLE;
 // functions to change states, along with any necessary setup before entering the states
 void enter_idle_state() {
   pref.end();     // if exiting from profiles list state, we want to close preferences.
-  ec11.set_rotary_options(IDLE_OPTIONS);
-  ec11.set_encoder_value(0);
+  EC11::set_rotary_options(IDLE_OPTIONS);
+  EC11::set_encoder_value(0);
+
+  // display screen, start at choice 0 so can be hardcoded
+  Display::clear_buffers();
+  Display::buff_text_println("[*] Profiles");
+  Display::buff_text_println("[ ] Manual Mode");
+  Display::buff_text_println("[ ] Debug Mode");
+  Display::draw_text();
+
   oven_state = IDLE;
 }
 
@@ -55,39 +54,45 @@ void enter_profiles_state() {
     ++num_profiles;
   }
   //                      // profiles    //back option    //new profile option
-  ec11.set_rotary_options(num_profiles + 1 + (num_profiles == 5 ? 0 : 1));
-  ec11.set_encoder_value(0);
+  EC11::set_rotary_options(num_profiles + 1 + (num_profiles == 5 ? 0 : 1));
+  EC11::set_encoder_value(0);
   oven_state = PROFILES_LIST;
 }
 
 void enter_reflow_state(int profile_choice) {
-  ssr.reset();
+  SSR::get_instance().reset();
 
   // start reflow process with OvenController
+
 
   oven_state = REFLOWING;
 }
 
 void enter_manual_state() {
   // set encoder to be limitless on value
-  ec11.set_rotary_options(-1);
-  ec11.set_encoder_value(20); // TODO: set to current temp?
+  EC11::set_rotary_options(-1);
+  EC11::set_encoder_value(20); // TODO: set to current temp?
   oven_state = MANUAL;
 }
 
 void enter_debug_state() {
-  ec11.set_rotary_options(-1);
+  EC11::set_rotary_options(-1);
   oven_state = DEBUG;
 }
 
 void setup() {
-  temp_sensor.setup();
-  display.setup();
+  TempSensor::get_instance().setup();   // setup temperature sensor
 
-  // ec11 setup isr
-  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_A()), rotate_isr, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_B()), rotate_isr, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ec11.get_pin_SW()), press_isr, CHANGE);
+  // display setup
+  if (!Display::get_instance().is_setup()) {
+    // display did not setup properly
+    while (true) {
+      delay(500);
+    }
+  }
+
+  // ec11 knob setup
+  EC11::get_instance(D0, D1, D2).setup();
 
   // start in idle
   enter_idle_state();
@@ -98,17 +103,19 @@ void setup() {
 
 void idle_loop() {
   // poll the EC11 object for the currently selected object
-  int choice = ec11.get_encoder_value();
-  // loop to display reflow profile choices
-  display.clear_display_buffer();
-  display.clear_text();
-  display.println("%s Profiles", choice == 0 ? "[*]" : "[ ]");
-  display.println("%s Manual Mode", choice == 1 ? "[*]" : "[ ]");
-  display.println("%s Debug Mode", choice == 2 ? "[*]" : "[ ]");
-  display.display_text();
+  int choice = EC11::get_encoder_value();
+
+  // poll knob, if turned, update the screen
+  if (EC11::poll_kb_event() != KB_NONE) {
+    Display::clear_buffers();
+    Display::buff_text_println("%s Profiles", choice == 0 ? "[*]" : "[ ]");
+    Display::buff_text_println("%s Manual Mode", choice == 1 ? "[*]" : "[ ]");
+    Display::buff_text_println("%s Debug Mode", choice == 2 ? "[*]" : "[ ]");
+    Display::draw_text();
+  }
 
   // select and change states depending on selection
-  if (ec11.poll_sw_event() == SW_PRESSED) {
+  if (EC11::poll_sw_event() == SW_PRESSED) {
     switch(choice) {
       case 0: enter_profiles_state(); break;  // profiles
       case 1: enter_manual_state(); break;    // manual mode
@@ -120,36 +127,35 @@ void idle_loop() {
 
 void profiles_list_loop() {
   // poll the EC11 object for the currently selected object
-  int choice = ec11.get_encoder_value();
+  int choice = EC11::get_encoder_value();
 
-  display.clear_display_buffer();
-  display.clear_text();
+  Display::clear_buffers();
   // print profiles
   int num_profiles = 0;
   for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
     if (!pref.isKey(profile_keys[i * 2])) break;
     // key is valid, get the name of the profile
-    display.println("%s %s", choice == i ? "[*]" : "[ ]", pref.getString(profile_keys[i*2]).c_str());
+    Display::buff_text_println("%s %s", choice == i ? "[*]" : "[ ]", pref.getString(profile_keys[i*2]).c_str());
     ++num_profiles;
   }
   if (num_profiles == 0) {
-    display.println("[ ] <no profiles>");
+    Display::buff_text_println("[ ] <no profiles>");
   }
   // print +profile option if necessary
   if (num_profiles < 5) {
-    display.println("%s [+]", choice == num_profiles ? "[*]" : "[ ]");
+    Display::buff_text_println("%s [+]", choice == num_profiles ? "[*]" : "[ ]");
   }
   // print back option
-  display.println("%s Back", choice == min(num_profiles + 1, MAX_PROFILE_CHOICES) ? "[*]" : "[ ]");
-  display.display_text();
+  Display::buff_text_println("%s Back", choice == min(num_profiles + 1, MAX_PROFILE_CHOICES) ? "[*]" : "[ ]");
+  Display::draw_text();
 
   // select and change states depending on selection
-  if (ec11.poll_sw_event() == SW_PRESSED) {
+  if (EC11::poll_sw_event() == SW_PRESSED) {
     if (choice < num_profiles) {
       // chose an existing profile
-      ProfileEditor editor(&pref, &display, &ec11);
+      ProfileEditor editor(&pref);
       switch(editor.edit_profile(choice)) {
-        case PROFILE_START: break;  // TODO: start the oven with profile
+        case PROFILE_START: enter_reflow_state(choice); break;
         case PROFILE_CHANGED: 
           pref.end(); // pref was set to read/write, end so we can restart it with just read
           enter_profiles_state();
@@ -159,7 +165,7 @@ void profiles_list_loop() {
       }
     } else if (choice == num_profiles) {
       // chose to add a new profile
-      ProfileEditor editor(&pref, &display, &ec11);
+      ProfileEditor editor(&pref);
       if (editor.new_profile()) {
         // pref was set to read/write, end so we can restart it with just read
         pref.end();
@@ -177,9 +183,9 @@ void reflow_loop() {
   // TODO: update the ovencontroller to update pid and ssr duty cycle
 
   // if clicked, emergency stop and return to idle state
-  switch(ec11.poll_sw_event()) {
+  switch(EC11::poll_sw_event()) {
     case SW_PRESSED:
-      ssr.emer_stop();
+      SSR::get_instance().emer_stop();
       // TODO: stop process in OvenController
       enter_idle_state();
       break;
@@ -192,39 +198,37 @@ void reflow_loop() {
 }
 
 void manual_loop() {
-  float target_temp = ec11.get_encoder_value();
+  float target_temp = EC11::get_encoder_value();
 
-  display.clear_display_buffer();
-  display.clear_text();
-  display.println("Target Temp: %06.2f C", target_temp);
-  display.println("\nClick knob to exit");
-  display.display_text();
+  Display::clear_buffers();
+  Display::buff_text_println("Target Temp: %06.2f C", target_temp);
+  Display::buff_text_println("\nClick knob to exit");
+  Display::draw_text();
 
   // if clicked, return to idle state
-  if (ec11.poll_sw_event() == SW_PRESSED) {
+  if (EC11::poll_sw_event() == SW_PRESSED) {
     enter_idle_state();
   }
 }
 
 void debug_loop() {
   // debug temperature sensor
-  temp_sensor.update();
+  TempSensor::get_instance().update();
   float sensor_temp = -1;
 
-  display.clear_display_buffer();
-  display.clear_text();
-  if (temp_sensor.getNumDevices() == 0) {
-    display.println("No Temperature Sensors Found...");
+  Display::clear_buffers();
+  if (TempSensor::get_instance().getNumDevices() == 0) {
+    Display::buff_text_println("No Temperature Sensors Found...");
   } else {
     // get address of sensor 0
-    sensor_temp = temp_sensor.getTempCByIndex(0);
-    display.println("Temperature: %06.2f", sensor_temp);
+    sensor_temp = TempSensor::get_instance().getTempCByIndex(0);
+    Display::buff_text_println("Temperature: %06.2f", sensor_temp);
   }
-  display.println("\nClick knob to exit");
-  display.display_text();
+  Display::buff_text_println("\nClick knob to exit");
+  Display::draw_text();
 
   // if clicked, return to idle state
-  if (ec11.poll_sw_event() == SW_PRESSED) {
+  if (EC11::poll_sw_event() == SW_PRESSED) {
     enter_idle_state();
   }
 }

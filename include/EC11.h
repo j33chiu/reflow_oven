@@ -21,72 +21,67 @@
 #define CW_TURN   0x10
 #define CCW_TURN  0x20
 
-// output switch states
+// output rotary events
+#define KB_NONE   0x0
+#define KB_CW     0x10
+#define KB_CCW    0x20
+
+// output switch events
 #define SW_NONE     0x0
 #define SW_PRESSED  0x10
 #define SW_RELEASED 0x20
 
-const uint8_t rotary_state_table[7][4] = {
-  // START
-  // 00:  01:   10:    11:    
-  {START, CW_1, CCW_1, START},
-  // CW_1
-  // 00:   01:   10:    11:
-  {CW_MID, CW_1, START, START},
-  // CW_MID
-  // 00:   01:   10:   11:
-  {CW_MID, CW_1, CW_2, START},
-  // CW_2
-  // 00:    01:    10:  11:
-  {CW_MID, START, CW_2, CW_TURN},
-  // CCW_1
-  // 00:    01:    10:    11:
-  {CCW_MID, START, CCW_1, START},
-  // CCW_MID
-  // 00:    01:    10:    11:
-  {CCW_MID, CCW_2, CCW_1, START},
-  // CCW_2
-  // 00:    01:    10:    11:
-  {CCW_MID, CCW_2, START, CCW_TURN}
-};
-
 #define SW_DEBOUNCE_MILLIS 50
 
+// singleton knob class
 class EC11 {
 
 public:
-  EC11(int pin_A = DEFAULT_PIN_A, 
-       int pin_B = DEFAULT_PIN_B, 
-       int pin_SW = DEFAULT_PIN_SW, 
-       int rotary_options = DEFAULT_OPTIONS);
+  // make assignment and copy inaccessible
+  EC11(EC11 const&) = delete;
+  EC11(EC11 &&) = delete;
+  EC11& operator=(EC11 const&) = delete;
+  EC11& operator=(EC11 &&) = delete;
 
-  int get_pin_A();
-  int get_pin_B();
-  int get_pin_SW();
-  int get_encoder_value();
+  static EC11& get_instance(const int pin_A = DEFAULT_PIN_A, 
+                            const int pin_B = DEFAULT_PIN_B, 
+                            const int pin_SW = DEFAULT_PIN_SW, 
+                            const int rotary_options = DEFAULT_OPTIONS);
+  
+  void setup();
+
+  static int get_pin_A();
+  static int get_pin_B();
+  static int get_pin_SW();
+  static int get_encoder_value();
 
   // set to -1 to allow encoder value to be unlimited
-  void set_rotary_options(int rotary_options);
-  void set_encoder_value(int encoder_value);
+  static void set_rotary_options(const int rotary_options);
+  static void set_encoder_value(const int encoder_value);
 
-  void update_rotate();
-  void update_sw();
+  static void update_rotate();
+  static void update_sw();
 
-  uint8_t poll_sw_event();
+  static uint8_t poll_sw_event();
+  static uint8_t poll_kb_event();
 
 private:
-  int pin_A = DEFAULT_PIN_A;
-  int pin_B = DEFAULT_PIN_B;
-  int pin_SW = DEFAULT_PIN_SW;
-  
-  int rotary_options = DEFAULT_OPTIONS;
-  volatile int encoder_value = 0;
+  EC11(int pin_A = DEFAULT_PIN_A, 
+      int pin_B = DEFAULT_PIN_B, 
+      int pin_SW = DEFAULT_PIN_SW, 
+      int rotary_options = DEFAULT_OPTIONS);
 
-  volatile uint8_t state = 0x0;
+  const static uint8_t rotary_state_table[7][4];
 
-  volatile bool sw_state = false;
-  volatile uint8_t sw_event = SW_NONE;
-  volatile unsigned long previous_click_millis = 0;
+  static int pin_A, pin_B, pin_SW, rotary_options;
+
+  volatile static int encoder_value;
+
+  volatile static uint8_t kb_state, kb_event;
+
+  volatile static bool sw_state;
+  volatile static uint8_t sw_event;
+  volatile static unsigned long previous_click_millis;
 };
 
 #endif

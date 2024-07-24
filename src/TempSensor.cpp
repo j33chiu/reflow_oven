@@ -1,5 +1,10 @@
 #include "TempSensor.h"
 
+TempSensor& TempSensor::get_instance() {
+  static TempSensor instance;
+  return instance;
+}
+
 TempSensor::TempSensor() {
   one_wire = OneWire(ONE_WIRE_BUS);
   temp_sensor = DallasTemperature(&one_wire);
