@@ -1,4 +1,4 @@
-#include "TempSensor.h"
+#include "core/TempSensor.h"
 
 TempSensor& TempSensor::get_instance() {
   static TempSensor instance;

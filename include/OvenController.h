@@ -1,9 +1,9 @@
 #ifndef OVEN_CONTROLLER_H
 #define OVEN_CONTROLLER_H
 
-#include "SSR.h"
-#include "TempSensor.h"
-#include "Display.h"
+#include "core/SSR.h"
+#include "core/TempSensor.h"
+#include "core/Display.h"
 #include "ReflowProfile.h"
 
 // states

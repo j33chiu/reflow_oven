@@ -1,7 +1,6 @@
 #include "ProfileEditor.h"
 
-ProfileEditor::ProfileEditor(Preferences* pref) {
-    this->pref = pref;
+ProfileEditor::ProfileEditor() {
     memset(profile_name, ' ', MAX_PROFILE_NAME_CHARS);          // reset data in name
     profile_name[MAX_PROFILE_NAME_CHARS] = '\0';
     memset(profile_state, 0, time_state_options*sizeof(int));   // reset profile_state to zeros
@@ -9,11 +8,7 @@ ProfileEditor::ProfileEditor(Preferences* pref) {
 
 bool ProfileEditor::new_profile() {
     // count currently existing profiles
-    int num_existing = 0;
-    for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
-        if (!pref->isKey(profile_keys[i * 2])) break;   // key is not valid
-        ++num_existing; // key is valid, profile exists
-    }
+    int num_existing = Storage::read_all();
     // if there are the max number of profiles, exit
     if (num_existing == MAX_PROFILE_CHOICES) {
         return false;
@@ -27,10 +22,7 @@ bool ProfileEditor::new_profile() {
         return false;
     } else {
         // properly made profile, save data
-        pref->end();
-        pref->begin(PREF_NAMESPACE, false);
-        pref->putString(profile_keys[profile_idx * 2], profile_name);   // save the profile name
-        pref->putString(profile_keys[(profile_idx * 2) + 1], profile_data);   // save the profile data
+        Storage::write_profile(profile_idx, profile_name, profile_data);
     }
     return true;
 }
@@ -39,8 +31,7 @@ uint8_t ProfileEditor::edit_profile(int profile_idx) {
     // current profile index (0-indexed) is set
     this->profile_idx = profile_idx;
     // get data of the profile from preferences
-    pref->getString(profile_keys[profile_idx * 2], profile_name, MAX_PROFILE_NAME_CHARS + 1);
-    pref->getString(profile_keys[(profile_idx * 2) + 1], profile_data, MAX_PROFILE_DATA_CHARS + 1);
+    Storage::read_profile(profile_idx, profile_name, profile_data);
     
     // setup ec11 choices: Start, Edit, Delete, Back (4 choices)
     EC11::set_rotary_options(NUM_PROFILE_OPTIONS);
@@ -78,34 +69,22 @@ uint8_t ProfileEditor::edit_profile(int profile_idx) {
                 // enter the naming and profile screens after setting the current profile data already.
                 if (this->name_screen()) {
                     // properly edited profile, save data
-                    pref->end();
-                    pref->begin(PREF_NAMESPACE, false);
-                    pref->putString(profile_keys[profile_idx * 2], profile_name);   // save the profile name
-                    pref->putString(profile_keys[(profile_idx * 2) + 1], profile_data);   // save the profile data
-                    output_state = PROFILE_CHANGED;
+                    if (Storage::write_profile(profile_idx, profile_name, profile_data)) {
+                        output_state = PROFILE_CHANGED;
+                    } else {
+                        output_state = PROFILE_NOTHING;
+                    }
                 } else {
                     // if here, user clicked "back", exiting the editing screens and we go back to the screen displaying all the options for the profile
                     chose_option = false;
                 }
             } else if (choice == 2) {
                 // chose "delete"
-                pref->end();
-                pref->begin(PREF_NAMESPACE, false);
-                // shift profiles (logic: deleting profile in slot 2 should shift all subsequent slots. can do this by shifting everything, then deleting whats at the end)
-                int i = profile_idx;
-                for (i = profile_idx + 1; i < MAX_PROFILE_CHOICES; i++) {
-                    if (pref->isKey(profile_keys[i * 2])) {
-                        pref->putString(profile_keys[(i - 1) * 2], pref->getString(profile_keys[i * 2]));
-                        pref->putString(profile_keys[((i - 1) * 2) + 1], pref->getString(profile_keys[(i * 2) + 1]));
-                    } else {
-                        break;
-                    }
+                if (Storage::delete_profile(profile_idx)) {
+                    output_state = PROFILE_CHANGED;
+                } else {
+                    output_state = PROFILE_NOTHING;
                 }
-                // remove last profile from pref after shift
-                --i;
-                pref->remove(profile_keys[i * 2]);
-                pref->remove(profile_keys[(i * 2) + 1]);
-                output_state = PROFILE_CHANGED;
             } else {
                 // chose "back", return nothing
                 output_state = PROFILE_NOTHING;

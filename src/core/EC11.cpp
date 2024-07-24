@@ -1,4 +1,4 @@
-#include "EC11.h"
+#include "core/EC11.h"
 
 // static initializations
 const uint8_t EC11::rotary_state_table[7][4] = {

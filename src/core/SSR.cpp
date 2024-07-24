@@ -1,4 +1,4 @@
-#include "SSR.h"
+#include "core/SSR.h"
 #include <Arduino.h>
 
 SSR& SSR::get_instance(int pin) {

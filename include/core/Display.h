@@ -77,10 +77,10 @@ private:
   static int ptr_pos;
 
   // graph
-  const static int graph_height_px = SCREEN_HEIGHT - (2 * (CHAR_PX_HEIGHT + 2));
-  const static int graph_width_px = SCREEN_WIDTH - ((CHAR_PX_WIDTH + 1) * 3 + 1);
-  const static int graph_origin_x = (CHAR_PX_WIDTH + 1) * 3 + 1;
-  const static int graph_origin_y = SCREEN_HEIGHT - (2 * (CHAR_PX_HEIGHT + 2));
+  static const int graph_height_px = SCREEN_HEIGHT - (2 * (CHAR_PX_HEIGHT + 2));
+  static const int graph_width_px = SCREEN_WIDTH - ((CHAR_PX_WIDTH + 1) * 3 + 1);
+  static const int graph_origin_x = (CHAR_PX_WIDTH + 1) * 3 + 1;
+  static const int graph_origin_y = SCREEN_HEIGHT - (2 * (CHAR_PX_HEIGHT + 2));
 
   static int graph_limits[4]; // 0: x_min, 1: x_max, 2: y_min, 3: y_max
   static char graph_x_axis_label[MAX_AXIS_LABEL_LEN + 1]; // max 3 characters

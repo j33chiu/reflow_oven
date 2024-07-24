@@ -1,18 +1,15 @@
 #include <Arduino.h>
 
-#include "TempSensor.h"
-#include "Display.h"
-#include "SSR.h"
-#include "EC11.h"
+#include "core/TempSensor.h"
+#include "core/Display.h"
+#include "core/SSR.h"
+#include "core/EC11.h"
+#include "core/Storage.h"
 #include "ProfileEditor.h"
 #include "OvenController.h"
 
-#include <Preferences.h>
-#include <nvs_flash.h>
-Preferences pref;
-
 // control ui and screens
-OvenController oven_controller();
+OvenController oven_controller;
 
 // Loop state machine
 #define IDLE            0 
@@ -28,7 +25,7 @@ uint8_t oven_state = IDLE;
 
 // functions to change states, along with any necessary setup before entering the states
 void enter_idle_state() {
-  pref.end();     // if exiting from profiles list state, we want to close preferences.
+  Storage::close(); // if exiting from profiles list state, we want to close preferences.
   EC11::set_rotary_options(IDLE_OPTIONS);
   EC11::set_encoder_value(0);
 
@@ -43,16 +40,8 @@ void enter_idle_state() {
 }
 
 void enter_profiles_state() {
-  // when we enter this state, we start with reads. any subsequent write operation must pref.end(), 
-  // then restart with write permissions, finish writing, then restart with read permissions. 
-  // the final pref.end() will be called when we go back to the idle mode
-  pref.begin(PREF_NAMESPACE, true); 
   // get number of profiles
-  int num_profiles = 0;
-  for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
-    if (!pref.isKey(profile_keys[i * 2])) break;
-    ++num_profiles;
-  }
+  uint8_t num_profiles = Storage::read_all();
   //                      // profiles    //back option    //new profile option
   EC11::set_rotary_options(num_profiles + 1 + (num_profiles == 5 ? 0 : 1));
   EC11::set_encoder_value(0);
@@ -94,11 +83,15 @@ void setup() {
   // ec11 knob setup
   EC11::get_instance(D0, D1, D2).setup();
 
+  // flash storage initialization
+  if (!Storage::get_instance().setup()) {
+    while (true) {
+      delay(500);
+    }
+  }
+
   // start in idle
   enter_idle_state();
-
-  // flash storage
-  nvs_flash_init();
 }
 
 void idle_loop() {
@@ -131,13 +124,14 @@ void profiles_list_loop() {
 
   Display::clear_buffers();
   // print profiles
-  int num_profiles = 0;
-  for (int i = 0; i < MAX_PROFILE_CHOICES; i++) {
-    if (!pref.isKey(profile_keys[i * 2])) break;
-    // key is valid, get the name of the profile
-    Display::buff_text_println("%s %s", choice == i ? "[*]" : "[ ]", pref.getString(profile_keys[i*2]).c_str());
-    ++num_profiles;
+  uint8_t num_profiles = Storage::read_all();
+  char temp_name_buffer[MAX_PROFILE_NAME_CHARS + 1];
+  for (int i = 0; i < num_profiles; ++i) {
+    memset(temp_name_buffer, 0, sizeof(temp_name_buffer));
+    Storage::read_profile_name(i, temp_name_buffer);
+    Display::buff_text_println("%s %s", choice == i ? "[*]" : "[ ]", temp_name_buffer);
   }
+
   if (num_profiles == 0) {
     Display::buff_text_println("[ ] <no profiles>");
   }
@@ -153,11 +147,11 @@ void profiles_list_loop() {
   if (EC11::poll_sw_event() == SW_PRESSED) {
     if (choice < num_profiles) {
       // chose an existing profile
-      ProfileEditor editor(&pref);
+      ProfileEditor editor;
       switch(editor.edit_profile(choice)) {
         case PROFILE_START: enter_reflow_state(choice); break;
         case PROFILE_CHANGED: 
-          pref.end(); // pref was set to read/write, end so we can restart it with just read
+          Storage::close(); // pref was set to read/write, end so we can restart it with just read
           enter_profiles_state();
           break;
         case PROFILE_NOTHING: 
@@ -165,10 +159,10 @@ void profiles_list_loop() {
       }
     } else if (choice == num_profiles) {
       // chose to add a new profile
-      ProfileEditor editor(&pref);
+      ProfileEditor editor;
       if (editor.new_profile()) {
         // pref was set to read/write, end so we can restart it with just read
-        pref.end();
+        Storage::close();
       }
       // done with profile editor
       enter_profiles_state();

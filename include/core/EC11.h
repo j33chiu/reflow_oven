@@ -71,7 +71,7 @@ private:
       int pin_SW = DEFAULT_PIN_SW, 
       int rotary_options = DEFAULT_OPTIONS);
 
-  const static uint8_t rotary_state_table[7][4];
+  static const uint8_t rotary_state_table[7][4];
 
   static int pin_A, pin_B, pin_SW, rotary_options;
 
