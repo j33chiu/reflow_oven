@@ -21,6 +21,7 @@
 #define SCREEN_HEIGHT 32  // in pixels
 #endif
 
+#define TEXT_ROWS_AVAIL 8 // number of rows of text that can be printed
 #define CHAR_PX_WIDTH   5 // in pixels
 #define CHAR_PX_HEIGHT  8 // in pixels
 

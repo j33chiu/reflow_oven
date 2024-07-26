@@ -185,5 +185,7 @@ bool Storage::delete_profile(const int profile_idx) {
     pref.remove(profile_data_keys[i]);
     memset(profile_name_cache[i], 0, sizeof(profile_name_cache[i]));
     memset(profile_data_cache[i], 0, sizeof(profile_data_cache[i]));
+    profile_name_cache_exists[i] = false;
+    profile_data_cache_exists[i] = false;
     return true;
 }
